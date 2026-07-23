@@ -119,9 +119,7 @@ import { setupServer } from "msw/node";
 const server = setupServer(
   http.post("http://localhost:3002/mcp", ({ request }) => {
     // Intercept and test
-    return HttpResponse.json({
-      /* response */
-    });
+    return HttpResponse.json({/* response */});
   }),
 );
 

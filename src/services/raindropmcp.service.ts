@@ -1,14 +1,5 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  GetPromptRequestSchema,
-  ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
-  type Prompt,
-} from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/server";
+import type { Prompt } from "@modelcontextprotocol/server";
 import pkg from "../../package.json";
 import { buildToolConfigs } from "../tools/index.js";
 import {
@@ -39,7 +30,7 @@ export class RaindropMCPService {
   private resourceSubscriptions: Set<string> = new Set(); // Track resource subscriptions
   private prompts: Array<
     Prompt & {
-      messages?: Array<{ role: string; content: string }>;
+      messages?: Array<{ role: "user" | "assistant"; content: string }>;
     }
   > = [
     {
@@ -48,7 +39,7 @@ export class RaindropMCPService {
         "Analyze titles/excerpts and suggest collections + tags for organization.",
       messages: [
         {
-          role: "system",
+          role: "user",
           content:
             "You are a bookmarking assistant that organizes Raindrop.io items by topic and intent. Propose concise collection moves and tag sets.",
         },
@@ -65,7 +56,7 @@ export class RaindropMCPService {
         "Identify potential duplicate bookmarks using URL + title similarity.",
       messages: [
         {
-          role: "system",
+          role: "user",
           content:
             "You detect duplicate bookmarks. Consider URL normalization, title similarity, and canonical forms. Return suspected duplicate pairs.",
         },
@@ -77,7 +68,7 @@ export class RaindropMCPService {
         "Render bookmarks as Markdown list with title, link, tags, and excerpt.",
       messages: [
         {
-          role: "system",
+          role: "user",
           content:
             "Format bookmarks as markdown bullet list: [Title](URL) — excerpt — tags: tag1, tag2.",
         },
@@ -123,28 +114,28 @@ export class RaindropMCPService {
   constructor() {
     try {
       this.raindropService = new RaindropService();
-      this.server = new McpServer({
-        name: "raindrop-mcp",
-        version: SERVER_VERSION,
-        description:
-          "MCP Server for Raindrop.io with advanced interactive capabilities",
-      });
-
-      // CRITICAL: Register capabilities FIRST before registering handlers
-      // The SDK needs to know what capabilities are enabled before setting handlers
-      this.server.server.registerCapabilities({
-        logging: {},
-        resources: { subscribe: true, listChanged: true },
-        prompts: { listChanged: true },
-        tools: { listChanged: true },
-        experimental: {
-          elicitation: {
-            supported: true,
-            description:
-              "Destructive and ambiguous actions require confirmation or clarification.",
+      this.server = new McpServer(
+        {
+          name: "raindrop-mcp",
+          version: SERVER_VERSION,
+          description:
+            "MCP Server for Raindrop.io with advanced interactive capabilities",
+        },
+        {
+          capabilities: {
+            resources: { subscribe: true, listChanged: true },
+            prompts: { listChanged: true },
+            tools: { listChanged: true },
+            experimental: {
+              elicitation: {
+                supported: true,
+                description:
+                  "Destructive and ambiguous actions require confirmation or clarification.",
+              },
+            },
           },
         },
-      });
+      );
 
       this.registerDeclarativeTools();
       this.registerResources();
@@ -176,7 +167,7 @@ export class RaindropMCPService {
             .replace(/_/g, " ")
             .replace(/\b\w/g, (l) => l.toUpperCase()),
           description: config.description,
-          inputSchema: (config.inputSchema as z.ZodObject<any>).shape,
+          inputSchema: config.inputSchema,
         },
         this.asyncHandler(async (args: any, extra: any) =>
           config.handler(args, {
@@ -227,14 +218,14 @@ export class RaindropMCPService {
 
   private registerResourceHandlers() {
     this.server.server.setRequestHandler(
-      ListResourcesRequestSchema,
+      "resources/list",
       this.asyncHandler(async () => ({
         resources: this.listResources(),
       })),
     );
 
     this.server.server.setRequestHandler(
-      ReadResourceRequestSchema,
+      "resources/read",
       this.asyncHandler(async (request: any) => {
         const contents = await this.readResource(request.params.uri);
         return { contents };
@@ -243,7 +234,7 @@ export class RaindropMCPService {
 
     // Add resource subscription handlers for protocol 2025-11-25
     this.server.server.setRequestHandler(
-      SubscribeRequestSchema,
+      "resources/subscribe",
       this.asyncHandler(async (request: any) => {
         const { uri } = request.params;
         this.resourceSubscriptions.add(uri);
@@ -252,7 +243,7 @@ export class RaindropMCPService {
     );
 
     this.server.server.setRequestHandler(
-      UnsubscribeRequestSchema,
+      "resources/unsubscribe",
       this.asyncHandler(async (request: any) => {
         const { uri } = request.params;
         this.resourceSubscriptions.delete(uri);
@@ -263,19 +254,25 @@ export class RaindropMCPService {
 
   private registerPromptHandlers() {
     this.server.server.setRequestHandler(
-      ListPromptsRequestSchema,
+      "prompts/list",
       this.asyncHandler(async () => ({
         prompts: this.prompts,
       })),
     );
 
     this.server.server.setRequestHandler(
-      GetPromptRequestSchema,
+      "prompts/get",
       this.asyncHandler(async (request: any) => {
         const prompt = this.prompts.find((p) => p.name === request.params.name);
         if (!prompt)
           throw new NotFoundError(`Prompt ${request.params.name} not found`);
-        return { prompt };
+        return {
+          description: prompt.description,
+          messages: (prompt.messages || []).map((message) => ({
+            role: message.role,
+            content: { type: "text" as const, text: message.content },
+          })),
+        };
       }),
     );
   }
@@ -420,8 +417,7 @@ export class RaindropMCPService {
     }
 
     const resource = this.resources[uri] as
-      | { contents: Array<{ uri: string; text: string }> }
-      | undefined;
+      { contents: Array<{ uri: string; text: string }> } | undefined;
     if (resource?.contents) {
       return resource.contents;
     }

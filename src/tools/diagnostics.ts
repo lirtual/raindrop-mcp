@@ -1,4 +1,5 @@
 import { z } from "zod";
+import pkg from "../../package.json";
 import type { ToolHandlerContext } from "./common.js";
 import { defineTool } from "./common.js";
 
@@ -60,7 +61,7 @@ export const createDiagnosticsTool = (
       const diagnosticsData = {
         version: serverVersion,
         mcpProtocolVersion: "2025-11-25",
-        sdkVersion: "1.25.3",
+        sdkVersion: pkg.dependencies["@modelcontextprotocol/server"],
         nodeVersion: process.version,
         bunVersion: typeof Bun !== "undefined" ? Bun.version : undefined,
         os: process.platform,

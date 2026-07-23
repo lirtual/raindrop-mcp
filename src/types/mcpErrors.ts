@@ -45,8 +45,4 @@ export class UpstreamError extends McpError {
 }
 
 export type KnownMcpError =
-  | NotFoundError
-  | ValidationError
-  | AuthError
-  | RateLimitError
-  | UpstreamError;
+  NotFoundError | ValidationError | AuthError | RateLimitError | UpstreamError;

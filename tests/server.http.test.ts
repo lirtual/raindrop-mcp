@@ -1,105 +1,39 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { app } from "../src/server.js";
 
-const PORT = process.env.HTTP_PORT ? parseInt(process.env.HTTP_PORT) : 3002;
-const BASE_URL = `http://localhost:${PORT}`;
+describe("HTTP server", () => {
+  it("reports the v2 protocol target", async () => {
+    const response = await request(app).get("/health").set("Host", "localhost");
 
-let _serverProcess: any;
-
-// Helper to start/stop the server for integration tests
-beforeAll(async () => {
-  // Start the server as a child process if not already running
-  // (Assume Bun is used for scripts)
-  // You may want to use a test-specific port to avoid conflicts
-  // This is a placeholder: in CI, the server should be started externally
-});
-
-afterAll(async () => {
-  // Optionally stop the server if started here
-});
-
-describe("HTTP Server Entrypoint (src/server.ts)", () => {
-  // These tests require a running HTTP server on port 3002
-  // Run manually with: bun run dev:http
-  // Then run: bun test server.http.test.ts
-
-  it.skip("responds to /health with healthy status and session info", async () => {
-    const res = await fetch(`${BASE_URL}/health`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
-    expect(body.status).toBe("healthy");
-    expect(body.service).toContain("raindrop-mcp");
-    expect(typeof body.activeSessions).toBe("number");
-    expect(Array.isArray(body.sessions)).toBe(true);
-    expect(body.optimizations).toBeDefined();
-  });
-
-  it.skip("responds to / with documentation and endpoint info", async () => {
-    const res = await fetch(`${BASE_URL}/`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
-    expect(body.name).toContain("Raindrop MCP");
-    expect(body.endpoints).toBeDefined();
-    expect(body.optimizations).toBeDefined();
-    expect(body.usage).toBeDefined();
-  });
-
-  it.skip("returns 400 for invalid /mcp requests", async () => {
-    const res = await fetch(`${BASE_URL}/mcp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ foo: "bar" }),
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      status: "healthy",
+      service: "raindrop-mcp",
+      protocolTarget: "2026-07-28",
+      httpMode: "per-request",
     });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.error).toBeDefined();
-    expect(body.error.message).toContain("Bad Request");
   });
 
-  it.skip("returns 200 for OPTIONS /mcp (CORS preflight)", async () => {
-    const res = await fetch(`${BASE_URL}/mcp`, {
-      method: "OPTIONS",
-    });
-    expect(res.status).toBe(200);
+  it("rejects cross-origin browser requests", async () => {
+    const response = await request(app)
+      .post("/mcp")
+      .set("Host", "localhost")
+      .set("Origin", "https://evil.example")
+      .send({ jsonrpc: "2.0", id: 1, method: "ping" });
+
+    expect(response.status).toBe(403);
   });
 
-  it.skip("handles MCP protocol initialize requests (modern transport)", async () => {
-    const initializeRequest = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        clientInfo: { name: "test-client", version: "1.0.0" },
-        capabilities: {},
-      },
-    };
-    const res = await fetch(`${BASE_URL}/mcp`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream", // Required for StreamableHTTPServerTransport
-      },
-      body: JSON.stringify(initializeRequest),
-    });
+  it("accepts same-origin preflight without wildcard CORS", async () => {
+    const response = await request(app)
+      .options("/mcp")
+      .set("Host", "localhost")
+      .set("Origin", "http://localhost:3002");
 
-    // The modern transport may return 400 for incomplete session setup,
-    // but it should be a proper JSON-RPC error response
-    expect([200, 400]).toContain(res.status);
-
-    const body = await res.json();
-    const rpcBody = body as any;
-    expect(rpcBody.jsonrpc).toBe("2.0");
-
-    if (res.status === 200) {
-      // Successful initialization
-      expect(rpcBody.id).toBe(1);
-      expect(rpcBody.result).toBeDefined();
-      expect(
-        rpcBody.result.serverInfo || rpcBody.result.capabilities,
-      ).toBeDefined();
-    } else {
-      // Expected error for incomplete session setup
-      expect(rpcBody.error).toBeDefined();
-      expect(rpcBody.error.message).toBeDefined();
-    }
+    expect(response.status).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "http://localhost:3002",
+    );
   });
 });

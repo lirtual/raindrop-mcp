@@ -103,9 +103,7 @@ Your HTTP server (`src/server.ts`) handles:
 const res = await request(server)
   .post("/mcp")
   .set("Host", "evil.com") // Test Host validation
-  .send({
-    /* MCP request */
-  })
+  .send({/* MCP request */})
   .expect(403); // Verify DNS rebinding works
 ```
 

@@ -8,8 +8,7 @@
  * @see {@link https://github.com/modelcontextprotocol/typescript-sdk | MCP TypeScript SDK}
  * @see StdioServerTransport
  */
-
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { config } from "dotenv";
 import { RaindropMCPService } from "./services/raindropmcp.service.js";
 import { createLogger } from "./utils/logger.js";
@@ -43,20 +42,16 @@ if (!process.env.RAINDROP_ACCESS_TOKEN) {
  * @see RaindropMCPService
  */
 export async function main(): Promise<void> {
-  const transport = new StdioServerTransport();
-  const raindropMCP = new RaindropMCPService();
-  const server = raindropMCP.getServer();
-  const cleanup = raindropMCP.cleanup.bind(raindropMCP);
-
-  await server.connect(transport);
+  const handle = serveStdio(() => new RaindropMCPService().getServer(), {
+    onerror: (error) => logger.error("STDIO transport error", error),
+  });
   logger.info("MCP server connected via STDIO transport");
 
   // Handle graceful shutdown on SIGINT
   process.on("SIGINT", async () => {
     logger.info("Received SIGINT, shutting down gracefully");
     try {
-      await cleanup();
-      await server.close();
+      await handle.close();
       logger.info("Server shut down completed");
     } catch (error) {
       logger.error("Error during shutdown:", error);
@@ -68,8 +63,7 @@ export async function main(): Promise<void> {
   process.on("SIGTERM", async () => {
     logger.info("Received SIGTERM, shutting down gracefully");
     try {
-      await cleanup();
-      await server.close();
+      await handle.close();
       logger.info("Server shut down completed");
     } catch (error) {
       logger.error("Error during shutdown:", error);
