@@ -6,6 +6,8 @@
 
 Connect Raindrop.io to your AI assistant with a simple MCP server. Use it to organize, search, and manage bookmarks with natural language.
 
+> Raindrop.io now also offers a hosted Streamable HTTP MCP endpoint (`https://api.raindrop.io/rest/v2/ai/mcp`) in beta for Pro users. Use that when its hosted toolset is sufficient; use this package for local stdio, self-hosted HTTP, and its additional library-management tools.
+
 ## What it can do
 
 - Create, update, and delete collections and bookmarks

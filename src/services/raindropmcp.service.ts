@@ -168,6 +168,7 @@ export class RaindropMCPService {
             .replace(/\b\w/g, (l) => l.toUpperCase()),
           description: config.description,
           inputSchema: config.inputSchema,
+          outputSchema: config.outputSchema,
         },
         this.asyncHandler(async (args: any, extra: any) =>
           config.handler(args, {

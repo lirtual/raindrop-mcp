@@ -5,14 +5,12 @@ import { describe, expect, it } from "vitest";
 config();
 // config({ path: '../.env' });
 describe(".env configuration", () => {
-  it("should load RAINDROP_ACCESS_TOKEN from environment variables and emit its value", () => {
+  it("should load RAINDROP_ACCESS_TOKEN from environment variables", () => {
     const accessToken = process.env.RAINDROP_ACCESS_TOKEN;
     // Defensive checks for type safety and presence
     expect(typeof accessToken).toBe("string");
     expect(accessToken).toBeDefined();
     expect(accessToken).not.toBe("");
-    // Emit the value for debugging (write to stderr to avoid interfering with MCP protocol)
-    process.stderr.write(`RAINDROP_ACCESS_TOKEN value: ${accessToken}\n`);
   });
 });
 

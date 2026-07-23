@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { ValidationError } from "../types/mcpErrors.js";
-import {
-  CollectionManageInputSchema,
-  CollectionOutputSchema,
-} from "../types/raindrop-zod.schemas.js";
+import { CollectionManageInputSchema } from "../types/raindrop-zod.schemas.js";
 import type { ToolHandlerContext } from "./common.js";
 import {
   defineTool,
@@ -20,16 +17,39 @@ const CollectionListInputSchema = z.object({
 });
 
 const CollectionListOutputSchema = z.object({
-  content: z.array(
+  count: z.number(),
+  collections: z.array(
     z.object({
-      type: z.string(),
-      name: z.string().optional(),
-      uri: z.string().optional(),
+      id: z.number(),
+      title: z.string(),
+      count: z.number(),
       description: z.string().optional(),
-      mimeType: z.string().optional(),
-      text: z.string().optional(),
     }),
   ),
+});
+
+const CollectionSummarySchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  description: z.string().optional(),
+  color: z.string().optional(),
+  parentId: z.number().optional(),
+});
+
+const CollectionManageOutputSchema = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("delete"), deleted: z.literal(true) }),
+  z.object({
+    operation: z.enum(["create", "update"]),
+    collection: CollectionSummarySchema,
+  }),
+]);
+
+const collectionSummary = (collection: any) => ({
+  id: collection._id,
+  title: collection.title || "Untitled Collection",
+  description: collection.description || undefined,
+  color: collection.color || undefined,
+  parentId: collection.parent?.$id,
 });
 
 type CollectionManageArgs = z.infer<typeof CollectionManageInputSchema> & {
@@ -51,7 +71,16 @@ const collectionListTool = defineTool({
       textContent(`Found ${collections.length} collections`),
       ...collections.map(makeCollectionLink),
     ];
-    return { content };
+    return {
+      content,
+      structuredContent: {
+        count: collections.length,
+        collections: collections.map((collection) => ({
+          ...collectionSummary(collection),
+          count: collection.count || 0,
+        })),
+      },
+    };
   },
 });
 
@@ -99,7 +128,7 @@ const collectionManageTool = defineTool({
   description:
     "Creates, updates, or deletes a collection. Use the operation parameter to specify the action.",
   inputSchema: CollectionManageInputSchema,
-  outputSchema: CollectionOutputSchema,
+  outputSchema: CollectionManageOutputSchema,
   handler: async (
     args: CollectionManageArgs,
     { raindropService }: ToolHandlerContext,
@@ -108,7 +137,14 @@ const collectionManageTool = defineTool({
       case "create": {
         if (!args.title)
           throw new ValidationError("title is required for create");
-        return raindropService.createCollection(args.title);
+        const collection = await raindropService.createCollection(args.title);
+        return {
+          content: [textContent(`Created collection: ${collection.title}`)],
+          structuredContent: {
+            operation: "create" as const,
+            collection: collectionSummary(collection),
+          },
+        };
       }
       case "update": {
         if (!args.id) throw new ValidationError("id is required for update");
@@ -116,12 +152,25 @@ const collectionManageTool = defineTool({
         setIfDefined(updatePayload, "title", args.title);
         setIfDefined(updatePayload, "color", args.color);
         setIfDefined(updatePayload, "description", args.description);
-        return raindropService.updateCollection(args.id, updatePayload as any);
+        const collection = await raindropService.updateCollection(
+          args.id,
+          updatePayload as any,
+        );
+        return {
+          content: [textContent(`Updated collection: ${collection.title}`)],
+          structuredContent: {
+            operation: "update" as const,
+            collection: collectionSummary(collection),
+          },
+        };
       }
       case "delete": {
         if (!args.id) throw new ValidationError("id is required for delete");
         await raindropService.deleteCollection(args.id);
-        return { deleted: true };
+        return {
+          content: [textContent(`Deleted collection ${args.id}`)],
+          structuredContent: { operation: "delete" as const, deleted: true },
+        };
       }
       default:
         throw new ValidationError(

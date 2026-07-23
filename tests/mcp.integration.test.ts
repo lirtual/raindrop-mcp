@@ -52,6 +52,11 @@ describeIf("MCP protocol integration", () => {
     expect(toolNames).toContain("diagnostics");
     expect(toolNames).toContain("collection_list");
     expect(toolNames).toContain("bookmark_search");
+    for (const name of ["diagnostics", "collection_list", "bookmark_search"]) {
+      expect(
+        tools.find((tool) => tool.name === name)?.outputSchema,
+      ).toBeDefined();
+    }
   });
 
   it("executes diagnostics through the MCP client", async () => {
@@ -71,7 +76,11 @@ describeIf("MCP protocol integration", () => {
     }
 
     const diagnostics = JSON.parse(diagnosticsContent.resource.text);
-    expect(diagnostics.mcpProtocolVersion).toBe("2025-11-25");
+    expect(diagnostics.mcpProtocolVersion).toBe("2026-07-28");
     expect(diagnostics.version).toBeDefined();
+    expect(result.structuredContent).toMatchObject({
+      mcpProtocolVersion: "2026-07-28",
+      version: diagnostics.version,
+    });
   });
 });

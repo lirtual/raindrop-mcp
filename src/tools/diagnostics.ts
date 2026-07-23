@@ -11,16 +11,12 @@ export const DiagnosticsInputSchema = z.object({
 });
 
 export const DiagnosticsOutputSchema = z.object({
-  content: z.array(
-    z.object({
-      type: z.literal("resource"),
-      resource: z.object({
-        uri: z.string(),
-        mimeType: z.string().optional(),
-        text: z.string(),
-      }),
-    }),
-  ),
+  version: z.string(),
+  mcpProtocolVersion: z.string(),
+  sdkVersion: z.string(),
+  nodeVersion: z.string(),
+  enabledTools: z.array(z.string()),
+  libraryHealth: z.record(z.string(), z.number()).optional(),
 });
 
 export const createDiagnosticsTool = (
@@ -35,7 +31,7 @@ export const createDiagnosticsTool = (
     handler: async (
       args?: z.infer<typeof DiagnosticsInputSchema>,
       context?: ToolHandlerContext,
-    ): Promise<z.infer<typeof DiagnosticsOutputSchema>> => {
+    ) => {
       const stats = context?.raindropService
         ? await context.raindropService.getUserStats()
         : null;
@@ -60,7 +56,7 @@ export const createDiagnosticsTool = (
 
       const diagnosticsData = {
         version: serverVersion,
-        mcpProtocolVersion: "2025-11-25",
+        mcpProtocolVersion: "2026-07-28",
         sdkVersion: pkg.dependencies["@modelcontextprotocol/server"],
         nodeVersion: process.version,
         bunVersion: typeof Bun !== "undefined" ? Bun.version : undefined,
@@ -99,6 +95,7 @@ export const createDiagnosticsTool = (
             },
           },
         ],
+        structuredContent: DiagnosticsOutputSchema.parse(diagnosticsData),
       };
     },
   });

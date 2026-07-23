@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { ValidationError } from "../types/mcpErrors.js";
-import {
-  BookmarkInputSchema,
-  BookmarkOutputSchema,
-} from "../types/raindrop-zod.schemas.js";
+import { BookmarkInputSchema } from "../types/raindrop-zod.schemas.js";
 import type { ToolHandlerContext } from "./common.js";
 import {
   defineTool,
@@ -48,7 +45,14 @@ const BookmarkSearchInputSchema = z.object({
 });
 
 const BookmarkSearchOutputSchema = z.object({
-  items: z.array(BookmarkOutputSchema),
+  items: z.array(
+    z.object({
+      id: z.number(),
+      title: z.string(),
+      url: z.string().url(),
+      tags: z.array(z.string()),
+    }),
+  ),
   count: z.number(),
 });
 
@@ -65,9 +69,17 @@ const GetRaindropInputSchema = z.object({
     .describe("Force a fresh fetch from the API, bypassing the local cache"),
 });
 
-const GetRaindropOutputSchema = z.object({
-  item: BookmarkOutputSchema,
-});
+const BookmarkSummarySchema = BookmarkSearchOutputSchema.shape.items.element;
+
+const BookmarkManageOutputSchema = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("delete"), deleted: z.literal(true) }),
+  z.object({
+    operation: z.enum(["create", "update"]),
+    bookmark: BookmarkSummarySchema,
+  }),
+]);
+
+const GetRaindropOutputSchema = z.object({ bookmark: BookmarkSummarySchema });
 
 const ListRaindropsInputSchema = z.object({
   collectionId: z
@@ -83,8 +95,15 @@ const ListRaindropsInputSchema = z.object({
 });
 
 const ListRaindropsOutputSchema = z.object({
-  items: z.array(BookmarkOutputSchema),
+  items: z.array(BookmarkSummarySchema),
   count: z.number(),
+});
+
+const bookmarkSummary = (bookmark: any) => ({
+  id: bookmark._id,
+  title: bookmark.title || "Untitled",
+  url: bookmark.link,
+  tags: bookmark.tags || [],
 });
 
 const bookmarkSearchTool = defineTool({
@@ -125,7 +144,13 @@ const bookmarkSearchTool = defineTool({
       content.push(makeBookmarkLink(bookmark));
     });
 
-    return { content };
+    return {
+      content,
+      structuredContent: {
+        count: result.count,
+        items: result.items.map(bookmarkSummary),
+      },
+    };
   },
 });
 
@@ -134,7 +159,7 @@ const bookmarkManageTool = defineTool({
   description:
     "Creates, updates, or deletes bookmarks. Use the operation parameter to specify the action.",
   inputSchema: BookmarkManageInputSchema,
-  outputSchema: BookmarkOutputSchema,
+  outputSchema: BookmarkManageOutputSchema,
   handler: async (
     args: z.infer<typeof BookmarkManageInputSchema>,
     { raindropService }: ToolHandlerContext,
@@ -150,10 +175,17 @@ const bookmarkManageTool = defineTool({
         setIfDefined(createPayload, "excerpt", args.description);
         setIfDefined(createPayload, "tags", args.tags);
         setIfDefined(createPayload, "important", args.important);
-        return raindropService.createBookmark(
+        const bookmark = await raindropService.createBookmark(
           args.collectionId,
           createPayload as any,
         );
+        return {
+          content: [textContent(`Created bookmark: ${bookmark.title}`)],
+          structuredContent: {
+            operation: "create" as const,
+            bookmark: bookmarkSummary(bookmark),
+          },
+        };
       }
       case "update": {
         if (!args.id) throw new ValidationError("id is required for update");
@@ -164,12 +196,25 @@ const bookmarkManageTool = defineTool({
         setIfDefined(updatePayload, "excerpt", args.description);
         setIfDefined(updatePayload, "tags", args.tags);
         setIfDefined(updatePayload, "important", args.important);
-        return raindropService.updateBookmark(args.id, updatePayload as any);
+        const bookmark = await raindropService.updateBookmark(
+          args.id,
+          updatePayload as any,
+        );
+        return {
+          content: [textContent(`Updated bookmark: ${bookmark.title}`)],
+          structuredContent: {
+            operation: "update" as const,
+            bookmark: bookmarkSummary(bookmark),
+          },
+        };
       }
       case "delete": {
         if (!args.id) throw new ValidationError("id is required for delete");
         await raindropService.deleteBookmark(args.id);
-        return { deleted: true };
+        return {
+          content: [textContent(`Deleted bookmark ${args.id}`)],
+          structuredContent: { operation: "delete" as const, deleted: true },
+        };
       }
       default:
         throw new ValidationError(
@@ -192,7 +237,10 @@ const getRaindropTool = defineTool({
       parseInt(args.id),
       args.skipCache,
     );
-    return { content: [makeBookmarkLink(bookmark)] };
+    return {
+      content: [makeBookmarkLink(bookmark)],
+      structuredContent: { bookmark: bookmarkSummary(bookmark) },
+    };
   },
 });
 
@@ -224,7 +272,13 @@ const listRaindropsTool = defineTool({
       content.push(makeBookmarkLink(bookmark)),
     );
 
-    return { content };
+    return {
+      content,
+      structuredContent: {
+        count: result.count,
+        items: result.items.map(bookmarkSummary),
+      },
+    };
   },
 });
 
