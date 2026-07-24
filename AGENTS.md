@@ -13,6 +13,16 @@ bun run test
 bun run build
 ```
 
+Run the irreversible live bookmark test only with an account authorized for it:
+
+```bash
+RUN_DESTRUCTIVE_LIVE_TESTS=true \
+CONFIRM_DESTRUCTIVE_LIVE_TESTS=DELETE_ONLY_TEST_BOOKMARKS \
+bunx vitest run tests/destructive.live.test.ts
+```
+
+It creates a uniquely tagged project URL, retrieves it by its returned ID, deletes it from the active library and Trash, then confirms it is absent. It never targets an existing bookmark.
+
 Use Bun for project commands and dependency updates: `bun run update:deps`. Keep `bun.lock` committed. Do not manually version, tag, publish, or edit release artifacts; semantic-release owns releases on `master`.
 
 ## Architecture
