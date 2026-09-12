@@ -15,6 +15,9 @@
   "scripts": {
     "dev": "bun run build && bun --watch src/index.ts",
     "dev:http": "bun run build && bun --watch src/server.ts",
+    "dev:worker": "bunx wrangler@latest dev",
+    "deploy:worker": "bunx wrangler@latest deploy",
+    "tail:worker": "bunx wrangler@latest tail",
     "inspector": "bunx @modelcontextprotocol/inspector node --env-file=.env build/index.js",
     "inspector:http-server": "bunx @modelcontextprotocol/inspector node --env-file=.env build/server.js",
     "type-check": "tsc --noEmit",
