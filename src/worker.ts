@@ -44,6 +44,19 @@ const withCors = (response: Response, origin: string | null) => {
   });
 };
 
+const isEmptyCompatibilityProbe = (request: Request) => {
+  if (request.method !== "POST") return false;
+
+  const contentLength = request.headers.get("Content-Length");
+  const contentType = request.headers.get("Content-Type")?.toLowerCase();
+
+  // ChatGPT performs a reachability/authentication probe with an empty body and
+  // application/octet-stream before sending a real MCP JSON-RPC initialize call.
+  // Keep this exception narrowly scoped so malformed real MCP requests still
+  // receive the SDK's normal 415/400 responses.
+  return contentLength === "0" && contentType === "application/octet-stream";
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -102,6 +115,11 @@ export default {
         ),
         origin,
       );
+    }
+
+    if (isEmptyCompatibilityProbe(request)) {
+      logger.info("Accepted empty MCP compatibility probe");
+      return withCors(new Response(null, { status: 204 }), origin);
     }
 
     // createMcpHandler returns a web-standard fetch-shaped handler object
