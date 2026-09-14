@@ -19,6 +19,31 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
+function serializeLogArg(arg: unknown): string {
+  if (arg instanceof Error) {
+    return JSON.stringify(
+      {
+        name: arg.name,
+        message: arg.message,
+        stack: arg.stack,
+        cause: arg.cause,
+      },
+      null,
+      2,
+    );
+  }
+
+  if (typeof arg === "object" && arg !== null) {
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
+  }
+
+  return String(arg);
+}
+
 /**
  * Logger class for MCP-safe logging.
  *
@@ -29,7 +54,6 @@ class Logger {
   private level: LogLevel;
 
   constructor() {
-    // Default to 'info' level, can be overridden by environment
     this.level = (process.env.LOG_LEVEL as LogLevel) || "info";
   }
 
@@ -46,24 +70,15 @@ class Logger {
   }
 
   private writeToStderr(level: LogLevel, message: string, ...args: any[]) {
-    if (!this.shouldLog(level)) {
-      return;
-    }
+    if (!this.shouldLog(level)) return;
 
     const timestamp = new Date().toISOString();
     const levelStr = level.toUpperCase().padEnd(5);
     const prefix = `[${timestamp}] ${levelStr}`;
 
-    // Use stderr to avoid polluting STDIO MCP protocol
-    if (args.length > 0) {
-      process.stderr.write(`${prefix} ${message}\n`);
-      args.forEach((arg) => {
-        process.stderr.write(
-          `${prefix} ${typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)}\n`,
-        );
-      });
-    } else {
-      process.stderr.write(`${prefix} ${message}\n`);
+    process.stderr.write(`${prefix} ${message}\n`);
+    for (const arg of args) {
+      process.stderr.write(`${prefix} ${serializeLogArg(arg)}\n`);
     }
   }
 
@@ -83,18 +98,9 @@ class Logger {
     this.writeToStderr("error", message, ...args);
   }
 
-  /**
-   * Create a child logger with a context prefix
-   */
-  /**
-   * Create a child logger with a context prefix.
-   * @param context - Context string to prefix log messages.
-   * @returns A new Logger instance with context-aware output.
-   */
   child(context: string): Logger {
     const childLogger = new Logger();
     childLogger.level = this.level;
-    // Override write method to include context
     const originalWrite = childLogger.writeToStderr.bind(childLogger);
     childLogger.writeToStderr = (
       level: LogLevel,
@@ -107,16 +113,8 @@ class Logger {
   }
 }
 
-/**
- * Singleton logger instance for general use.
- */
 export const logger = new Logger();
 
-/**
- * Logger factory for creating context-specific loggers.
- * @param context - Optional context string for log messages.
- * @returns A Logger instance (child if context provided, otherwise singleton).
- */
 export function createLogger(context?: string): Logger {
   return context ? logger.child(context) : logger;
 }
