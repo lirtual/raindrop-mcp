@@ -14,15 +14,12 @@ const env = (overrides: Record<string, string | undefined> = {}) => ({
 
 const mcpRequest = (
   headers: Record<string, string> = {},
-  init: RequestInit = {},
+  body: string | null = null,
 ) =>
   new Request(`${workerUrl}/mcp`, {
     method: "POST",
-    ...init,
-    headers: {
-      ...headers,
-      ...(init.headers || {}),
-    },
+    headers,
+    body,
   });
 
 describe("Cloudflare Worker origin authentication", () => {
@@ -43,7 +40,10 @@ describe("Cloudflare Worker origin authentication", () => {
   it("keeps /health public and free of secret material", async () => {
     const response = await worker.fetch(
       new Request(`${workerUrl}/health`),
-      env({ RAINDROP_ACCESS_TOKEN: undefined, MCP_ORIGIN_TOKEN: undefined }) as never,
+      env({
+        RAINDROP_ACCESS_TOKEN: undefined,
+        MCP_ORIGIN_TOKEN: undefined,
+      }) as never,
     );
 
     expect(response.status).toBe(200);
@@ -111,21 +111,19 @@ describe("Cloudflare Worker origin authentication", () => {
           Accept: "application/json, text/event-stream",
           "Content-Type": "application/json",
         },
-        {
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "initialize",
-            params: {
-              protocolVersion: "2025-11-25",
-              capabilities: {},
-              clientInfo: {
-                name: "worker-security-test",
-                version: "1.0.0",
-              },
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-11-25",
+            capabilities: {},
+            clientInfo: {
+              name: "worker-security-test",
+              version: "1.0.0",
             },
-          }),
-        },
+          },
+        }),
       ),
       env() as never,
     );
@@ -138,14 +136,11 @@ describe("Cloudflare Worker origin authentication", () => {
 
   it("accepts the temporary empty compatibility probe only after origin auth", async () => {
     const response = await worker.fetch(
-      mcpRequest(
-        {
-          ...originAuth,
-          "Content-Type": "application/octet-stream",
-          "Content-Length": "0",
-        },
-        { body: null },
-      ),
+      mcpRequest({
+        ...originAuth,
+        "Content-Type": "application/octet-stream",
+        "Content-Length": "0",
+      }),
       env() as never,
     );
 
@@ -159,7 +154,7 @@ describe("Cloudflare Worker origin authentication", () => {
           ...originAuth,
           "Content-Type": "application/json",
         },
-        { body: "{}" },
+        "{}",
       ),
       env() as never,
     );
