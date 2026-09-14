@@ -23,9 +23,9 @@ const mcpHandler = createMcpHandler(
 );
 
 const corsHeaders = {
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*",
+    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*, MCP-Session-Id",
 };
 
 const withCors = (response: Response, origin: string | null) => {
@@ -104,10 +104,9 @@ export default {
       );
     }
 
-    // With a modern Workers compatibility date, bindings and secrets are
-    // exposed through process.env. The existing service can therefore keep
-    // using its current environment-variable based configuration unchanged.
-    const response = await mcpHandler(request);
+    // createMcpHandler returns a web-standard fetch-shaped handler object
+    // ({ fetch, close, notify, bus }), not a directly callable function.
+    const response = await mcpHandler.fetch(request);
     return withCors(response, origin);
   },
 };
