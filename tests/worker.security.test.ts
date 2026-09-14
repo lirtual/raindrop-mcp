@@ -103,6 +103,39 @@ describe("Cloudflare Worker origin authentication", () => {
     });
   });
 
+  it("passes an authenticated MCP initialize request to the SDK", async () => {
+    const response = await worker.fetch(
+      mcpRequest(
+        {
+          ...originAuth,
+          Accept: "application/json, text/event-stream",
+          "Content-Type": "application/json",
+        },
+        {
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2025-11-25",
+              capabilities: {},
+              clientInfo: {
+                name: "worker-security-test",
+                version: "1.0.0",
+              },
+            },
+          }),
+        },
+      ),
+      env() as never,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('"jsonrpc":"2.0"');
+    expect(body).toContain('"serverInfo"');
+  });
+
   it("accepts the temporary empty compatibility probe only after origin auth", async () => {
     const response = await worker.fetch(
       mcpRequest(
