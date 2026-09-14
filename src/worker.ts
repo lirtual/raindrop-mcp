@@ -6,12 +6,14 @@ import { createLogger } from "./utils/logger.js";
 
 interface Env {
   RAINDROP_ACCESS_TOKEN: string;
+  MCP_ORIGIN_TOKEN: string;
   RAINDROP_RATE_LIMIT_POINTS?: string;
   RAINDROP_RATE_LIMIT_DURATION_SECONDS?: string;
   RAINDROP_RATE_LIMIT_MAX_RETRIES?: string;
 }
 
 const logger = createLogger("worker");
+const ORIGIN_AUTH_HEADER = "X-MCP-Origin-Token";
 
 const mcpHandler = createMcpHandler(
   () => new RaindropMCPService().getServer(),
@@ -25,7 +27,7 @@ const mcpHandler = createMcpHandler(
 const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*, MCP-Session-Id",
+    `Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*, MCP-Session-Id, ${ORIGIN_AUTH_HEADER}`,
 };
 
 const withCors = (response: Response, origin: string | null) => {
@@ -44,16 +46,53 @@ const withCors = (response: Response, origin: string | null) => {
   });
 };
 
+const constantTimeEqual = async (actual: string, expected: string) => {
+  const encoder = new TextEncoder();
+  const [actualHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(actual)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+
+  const actualBytes = new Uint8Array(actualHash);
+  const expectedBytes = new Uint8Array(expectedHash);
+  let difference = 0;
+  for (let index = 0; index < actualBytes.length; index += 1) {
+    difference |= actualBytes[index] ^ expectedBytes[index];
+  }
+  return difference === 0;
+};
+
+const authenticateOrigin = async (request: Request, env: Env) => {
+  if (!env.MCP_ORIGIN_TOKEN) {
+    logger.error("MCP_ORIGIN_TOKEN is not configured");
+    return { configured: false, authenticated: false };
+  }
+
+  const suppliedToken = request.headers.get(ORIGIN_AUTH_HEADER);
+  if (!suppliedToken) {
+    logger.warn("Rejected MCP request without origin credential");
+    return { configured: true, authenticated: false };
+  }
+
+  const authenticated = await constantTimeEqual(
+    suppliedToken,
+    env.MCP_ORIGIN_TOKEN,
+  );
+  if (!authenticated) {
+    logger.warn("Rejected MCP request with invalid origin credential");
+  }
+  return { configured: true, authenticated };
+};
+
 const isEmptyCompatibilityProbe = (request: Request) => {
   if (request.method !== "POST") return false;
 
   const contentLength = request.headers.get("Content-Length");
   const contentType = request.headers.get("Content-Type")?.toLowerCase();
 
-  // ChatGPT performs a reachability/authentication probe with an empty body and
-  // application/octet-stream before sending a real MCP JSON-RPC initialize call.
-  // Keep this exception narrowly scoped so malformed real MCP requests still
-  // receive the SDK's normal 415/400 responses.
+  // Temporary compatibility behavior for an observed client reachability probe.
+  // Authentication is always checked before this exception. Keep it narrowly
+  // scoped so malformed real MCP requests still receive the SDK's normal errors.
   return contentLength === "0" && contentType === "application/octet-stream";
 };
 
@@ -107,10 +146,28 @@ export default {
       );
     }
 
-    if (!env.RAINDROP_ACCESS_TOKEN) {
+    const originAuth = await authenticateOrigin(request, env);
+    if (!originAuth.configured) {
       return withCors(
         Response.json(
-          { error: "RAINDROP_ACCESS_TOKEN is not configured" },
+          { error: "MCP origin authentication is not configured" },
+          { status: 500 },
+        ),
+        origin,
+      );
+    }
+    if (!originAuth.authenticated) {
+      return withCors(
+        Response.json({ error: "Unauthorized" }, { status: 401 }),
+        origin,
+      );
+    }
+
+    if (!env.RAINDROP_ACCESS_TOKEN) {
+      logger.error("RAINDROP_ACCESS_TOKEN is not configured");
+      return withCors(
+        Response.json(
+          { error: "Raindrop authentication is not configured" },
           { status: 500 },
         ),
         origin,
