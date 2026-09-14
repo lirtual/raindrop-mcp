@@ -45,6 +45,10 @@ Run these in order and stop on the first failure:
 7. Confirm destructive/read-only annotations and runtime safety controls still match the service contract.
 8. Inspect application logs and confirm no secret values were emitted.
 
+## Evidence requirement
+
+Treat the checklist above as an operational gate, not as documentation-only acceptance. Record the date, deployed origin, Portal name, representative read/write tools, and secret-redaction result in the migration ticket before declaring a service cut over. Code and CI can prove fail-closed behavior and credential separation, but they do not substitute for live Portal discovery and tool execution.
+
 ## Rollback requirement
 
 Before production cutover, document how to restore the previous ingress without changing business-service state or rotating unrelated business credentials. Rollback should affect only the ingress/authentication layer unless a service-specific incident requires otherwise.
