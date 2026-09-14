@@ -105,6 +105,12 @@ Add this to your MCP client configuration:
 }
 ```
 
+### Cloudflare Worker + MCP Portal
+
+For an authenticated remote deployment, use Cloudflare MCP Portal / Managed OAuth as the client-facing entry point and keep the Worker origin protected with an independent `MCP_ORIGIN_TOKEN` bearer secret. Do not reuse the Raindrop API token as the origin credential.
+
+See [docs/cloudflare-mcp-portal.md](docs/cloudflare-mcp-portal.md) for the complete deployment and acceptance flow.
+
 ## Requirements
 
 - A Raindrop.io account
