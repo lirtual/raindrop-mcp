@@ -7,7 +7,7 @@ This deployment keeps client-facing OAuth at Cloudflare and keeps the Raindrop A
 ```text
 MCP client
   -> Cloudflare MCP Portal + Managed OAuth
-  -> X-MCP-Origin-Token
+  -> Authorization: Bearer <MCP_ORIGIN_TOKEN>
   -> raindrop-mcp Worker /mcp
   -> RAINDROP_ACCESS_TOKEN
   -> Raindrop.io API
@@ -29,17 +29,23 @@ bunx wrangler secret put RAINDROP_ACCESS_TOKEN
 bunx wrangler secret put MCP_ORIGIN_TOKEN
 ```
 
-Generate `MCP_ORIGIN_TOKEN` as a high-entropy random value. The Worker expects it in the `X-MCP-Origin-Token` request header.
+Generate `MCP_ORIGIN_TOKEN` as a high-entropy random value. The Worker expects it as a standard bearer credential:
 
-The production Wrangler configuration disables both the default `workers.dev` route and Preview URLs. Keep a Worker custom domain available for Cloudflare MCP Portal to reach the backend.
+```text
+Authorization: Bearer <MCP_ORIGIN_TOKEN>
+```
+
+The production Wrangler configuration disables the default `workers.dev` route, Preview URLs, and invocation logs. Keep a Worker custom domain available for Cloudflare MCP Portal to reach the backend. Application logs remain enabled for fixed auth/protocol diagnostics and must never contain secret values.
 
 ## 2. Verify the Worker origin
 
 `GET /health` remains public for operational checks.
 
-A direct request to `/mcp` without `X-MCP-Origin-Token` must return `401 Unauthorized`.
+A direct request to `/mcp` without the bearer origin credential must return `401 Unauthorized`.
 
 If `MCP_ORIGIN_TOKEN` is not configured at all, `/mcp` fails closed with a server configuration error. If `RAINDROP_ACCESS_TOKEN` is absent, an authenticated `/mcp` request also fails closed before tool execution.
+
+After successful origin authentication, the Worker removes the `Authorization` header before the request is handed to the MCP SDK. The Portal-to-origin secret is therefore not exposed to MCP tools or service code.
 
 ## 3. Add the Worker as an MCP server in Cloudflare
 
@@ -49,17 +55,18 @@ In Cloudflare Zero Trust, add the Worker MCP URL as an upstream MCP server. Use 
 https://<worker-custom-domain>/mcp
 ```
 
-Configure the upstream authentication as a static custom header rather than OAuth:
+Configure the upstream authentication as **Bearer** and set the bearer credential to the same value stored in `MCP_ORIGIN_TOKEN`.
+
+Cloudflare MCP Portal sends a raw bearer credential as `Authorization: Bearer <token>` to the upstream MCP server. Do not place the Raindrop Test Token in the Portal.
+
+If configuring the server through the Cloudflare API, the relevant contract is conceptually:
 
 ```json
 {
-  "headers": {
-    "X-MCP-Origin-Token": "<same value as MCP_ORIGIN_TOKEN>"
-  }
+  "auth_type": "bearer",
+  "auth_credentials": "<same value as MCP_ORIGIN_TOKEN>"
 }
 ```
-
-Cloudflare MCP Portal supports custom static headers through its bearer/custom-header credential configuration. Do not place the Raindrop Test Token in the Portal.
 
 ## 4. Create the MCP Portal
 
@@ -74,14 +81,14 @@ The URL given to ChatGPT or another MCP client must be the Portal URL, not the r
 Validate in this order:
 
 1. `GET /health` on the Worker returns healthy.
-2. Direct `/mcp` without the origin header returns `401`.
-3. Direct `/mcp` with the correct origin header reaches the MCP transport.
+2. Direct `/mcp` without the bearer origin credential returns `401`.
+3. Direct `/mcp` with `Authorization: Bearer <MCP_ORIGIN_TOKEN>` reaches the MCP transport.
 4. The Portal can discover the Raindrop server and its tools.
 5. The MCP client completes Managed OAuth against the Portal.
 6. The client can enumerate Raindrop tools through the Portal.
 7. Run one read-only tool and confirm a successful Raindrop result.
 8. Only after the read path is verified, run a write-capable tool and confirm the resulting change in Raindrop.
-9. Check Worker logs and confirm no OAuth bearer token, `MCP_ORIGIN_TOKEN`, or `RAINDROP_ACCESS_TOKEN` value is logged.
+9. Check Worker application logs and confirm no OAuth bearer token, `MCP_ORIGIN_TOKEN`, or `RAINDROP_ACCESS_TOKEN` value is logged.
 
 ## Compatibility probe
 
@@ -101,3 +108,4 @@ If Gateway is introduced later, consume client authentication at Gateway and kee
 - Managed OAuth: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
 - Worker `workers.dev` configuration: https://developers.cloudflare.com/workers/configuration/routing/workers-dev/
 - Worker Preview URLs: https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/
+- Workers Logs: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
