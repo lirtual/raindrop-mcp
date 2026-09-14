@@ -13,7 +13,6 @@ interface Env {
 }
 
 const logger = createLogger("worker");
-const ORIGIN_AUTH_HEADER = "X-MCP-Origin-Token";
 
 const mcpHandler = createMcpHandler(
   () => new RaindropMCPService().getServer(),
@@ -27,7 +26,7 @@ const mcpHandler = createMcpHandler(
 const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    `Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*, MCP-Session-Id, ${ORIGIN_AUTH_HEADER}`,
+    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Param-*, MCP-Session-Id",
 };
 
 const withCors = (response: Response, origin: string | null) => {
@@ -62,15 +61,21 @@ const constantTimeEqual = async (actual: string, expected: string) => {
   return difference === 0;
 };
 
+const extractBearerToken = (request: Request) => {
+  const authorization = request.headers.get("Authorization") || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+};
+
 const authenticateOrigin = async (request: Request, env: Env) => {
   if (!env.MCP_ORIGIN_TOKEN) {
     logger.error("MCP_ORIGIN_TOKEN is not configured");
     return { configured: false, authenticated: false };
   }
 
-  const suppliedToken = request.headers.get(ORIGIN_AUTH_HEADER);
+  const suppliedToken = extractBearerToken(request);
   if (!suppliedToken) {
-    logger.warn("Rejected MCP request without origin credential");
+    logger.warn("Rejected MCP request without origin bearer credential");
     return { configured: true, authenticated: false };
   }
 
@@ -79,9 +84,15 @@ const authenticateOrigin = async (request: Request, env: Env) => {
     env.MCP_ORIGIN_TOKEN,
   );
   if (!authenticated) {
-    logger.warn("Rejected MCP request with invalid origin credential");
+    logger.warn("Rejected MCP request with invalid origin bearer credential");
   }
   return { configured: true, authenticated };
+};
+
+const withoutOriginCredential = (request: Request) => {
+  const headers = new Headers(request.headers);
+  headers.delete("Authorization");
+  return new Request(request, { headers });
 };
 
 const isEmptyCompatibilityProbe = (request: Request) => {
@@ -179,9 +190,12 @@ export default {
       return withCors(new Response(null, { status: 204 }), origin);
     }
 
+    // Do not expose the Portal-to-origin bearer secret to the MCP SDK or tools.
+    const sanitizedRequest = withoutOriginCredential(request);
+
     // createMcpHandler returns a web-standard fetch-shaped handler object
     // ({ fetch, close, notify, bus }), not a directly callable function.
-    const response = await mcpHandler.fetch(request);
+    const response = await mcpHandler.fetch(sanitizedRequest);
     return withCors(response, origin);
   },
 };
