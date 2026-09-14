@@ -4,6 +4,7 @@ import worker from "../src/worker.js";
 const workerUrl = "https://raindrop-mcp.example.test";
 const originToken = "origin-secret-for-tests";
 const raindropToken = "raindrop-secret-for-tests";
+const originAuth = { Authorization: `Bearer ${originToken}` };
 
 const env = (overrides: Record<string, string | undefined> = {}) => ({
   RAINDROP_ACCESS_TOKEN: raindropToken,
@@ -64,16 +65,16 @@ describe("Cloudflare Worker origin authentication", () => {
     });
   });
 
-  it("rejects a missing origin credential before MCP handling", async () => {
+  it("rejects a missing bearer credential before MCP handling", async () => {
     const response = await worker.fetch(mcpRequest(), env() as never);
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
   });
 
-  it("rejects an invalid origin credential before checking Raindrop auth", async () => {
+  it("rejects an invalid bearer credential before checking Raindrop auth", async () => {
     const response = await worker.fetch(
-      mcpRequest({ "X-MCP-Origin-Token": "wrong-secret" }),
+      mcpRequest({ Authorization: "Bearer wrong-secret" }),
       env({ RAINDROP_ACCESS_TOKEN: undefined }) as never,
     );
 
@@ -81,9 +82,18 @@ describe("Cloudflare Worker origin authentication", () => {
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
   });
 
+  it("rejects a non-bearer Authorization scheme", async () => {
+    const response = await worker.fetch(
+      mcpRequest({ Authorization: originToken }),
+      env() as never,
+    );
+
+    expect(response.status).toBe(401);
+  });
+
   it("fails closed when Raindrop auth is missing after origin auth succeeds", async () => {
     const response = await worker.fetch(
-      mcpRequest({ "X-MCP-Origin-Token": originToken }),
+      mcpRequest(originAuth),
       env({ RAINDROP_ACCESS_TOKEN: undefined }) as never,
     );
 
@@ -97,7 +107,7 @@ describe("Cloudflare Worker origin authentication", () => {
     const response = await worker.fetch(
       mcpRequest(
         {
-          "X-MCP-Origin-Token": originToken,
+          ...originAuth,
           "Content-Type": "application/octet-stream",
           "Content-Length": "0",
         },
@@ -113,7 +123,7 @@ describe("Cloudflare Worker origin authentication", () => {
     const response = await worker.fetch(
       mcpRequest(
         {
-          "X-MCP-Origin-Token": originToken,
+          ...originAuth,
           "Content-Type": "application/json",
         },
         { body: "{}" },
@@ -124,7 +134,7 @@ describe("Cloudflare Worker origin authentication", () => {
     expect(response.status).not.toBe(204);
   });
 
-  it("advertises the origin credential header in CORS preflight", async () => {
+  it("allows Authorization in CORS preflight", async () => {
     const response = await worker.fetch(
       new Request(`${workerUrl}/mcp`, {
         method: "OPTIONS",
@@ -135,7 +145,7 @@ describe("Cloudflare Worker origin authentication", () => {
 
     expect(response.status).toBe(204);
     expect(response.headers.get("Access-Control-Allow-Headers")).toContain(
-      "X-MCP-Origin-Token",
+      "Authorization",
     );
   });
 });
